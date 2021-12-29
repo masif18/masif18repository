@@ -1,0 +1,123 @@
+public class DownloadDocuments {
+
+	public static void main(String[] args) throws IOException {
+		
+		String excelFilePath = "D:\\Asif\\AppID.xlsx";
+		File excelFile = new File(excelFilePath);
+		FileInputStream excelFileInputStream = null;
+		try {
+			excelFileInputStream = new FileInputStream(excelFile);
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		}
+		
+		XSSFWorkbook  workbook = new XSSFWorkbook(excelFileInputStream);
+	    XSSFSheet worksheet  = workbook.getSheetAt(0);
+	    
+	    List<Integer> appIds = new ArrayList<Integer>();
+	    
+	    for(int i=2 ; i<=worksheet.getPhysicalNumberOfRows() ;i++) {
+	            
+	        XSSFRow row = worksheet.getRow(i);
+	        appIds.add((int)row.getCell(1).getNumericCellValue());
+	        System.out.println(row.getCell(1).getNumericCellValue());
+	            
+	    }
+	    System.out.println("Count of App Ids : " + appIds.size());
+	    
+	    try {
+			Class.forName("com.mysql.cj.jdbc.Driver");
+			Connection con = DriverManager.getConnection("jdbc:mysql://dlp-prod-db.cq2x132xym5e.ap-south-1.rds.amazonaws.com:3306/dms_prod","dms","f3528d11-432b-4476");
+			
+			List<JSONObject> records = new ArrayList<JSONObject>();
+			
+			List<Integer> emptyAppIds = new ArrayList<Integer>();
+			int count = 0;
+			for(int appId : appIds) {
+				
+				String path = "D:\\Asif\\AppId\\";
+				
+				File theDir = new File(path + appId);
+				if (!theDir.exists()){
+				    System.out.println("AppId " + appId + " is missing");
+				    count = count + 1;
+				}
+				
+				
+				
+				Statement stmt=con.createStatement();
+				ResultSet rs=stmt.executeQuery("select * from document where reference_value_1='" + appId + "'");
+				
+				if(!rs.next()) {
+					System.out.println(appId);
+					emptyAppIds.add(appId);
+					count = count + 1;
+				}
+				while(rs.next()) {
+//					documentKeys.add("{\"documentKey\":" + rs.getString("document_key") + "\"}");
+					JSONObject obj = new JSONObject();
+					obj.put("documentKey", rs.getString("document_key"));
+					obj.put("appId", rs.getString("reference_value_1"));
+					obj.put("fileName", rs.getString("file_name"));
+					records.add(obj);
+					System.out.println(rs.getString("document_key"));
+				}
+				System.out.println("*******************************************************************************");
+			}
+			System.out.println("Count of missing appId " + count);
+			System.out.println("Count of Document Keys are : " + records.size());
+			System.out.println("*****Count : " + count + "   ****** Empty App Ids : " + emptyAppIds.size());
+//			con.close();
+			
+			for(JSONObject record : records) {
+				String documentKey = record.getString("documentKey");
+				String appId = record.getString("appId");
+				String fileName = record.getString("fileName");
+				System.out.println("DocumentKey : " + documentKey + "    App Id : " + appId + "     FileName : " + fileName);
+				
+				String path = "D:\\Asif\\AppId\\";
+				
+				File theDir = new File(path + appId);
+				if (!theDir.exists()){
+				    theDir.mkdirs();
+				}
+				File theDir2 = new File(path + appId + "\\" + fileName);
+				if(!theDir2.exists()) {
+					System.out.println("IN " + appId + "    FileName " + fileName + "does not exists");
+					byte[] downloadedFile = downloadDocument(documentKey);
+					
+					String filePath = path + appId + "\\" + fileName;
+					File file = new File(filePath);
+					FileOutputStream fos = new FileOutputStream(file);
+					fos.write(downloadedFile);
+					fos.close();
+				}
+			}
+			
+		} catch (Exception e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+
+	}
+	
+	public static byte[] downloadDocument(String documentKey) {
+		String url = "http://10.225.94.37:3020/file/download";
+		
+		RestTemplate restTemplate = new RestTemplate();
+		
+		HttpHeaders headers = new HttpHeaders();
+		headers.setContentType(MediaType.APPLICATION_JSON);
+		headers.set("x-api-key", "Wif2107A1IayptY3WbxMD8iNCoP6Dmc67jKV0Mlm");
+		headers.set("username", "CDR_User");
+		
+		Map<String, Object> map = new HashMap<>();
+		map.put("documentKey", documentKey);
+		
+		HttpEntity<Map<String, Object>> entity = new HttpEntity<>(map , headers);
+		ResponseEntity<byte[]> response = restTemplate.postForEntity(url, entity, byte[].class);
+//		System.out.println(response);
+		return response.getBody();
+	}
+
+}
